@@ -1,4 +1,4 @@
-name: Monthly Archive to Google Drive
+name: Monthly Archive to Google Drive (Yangon)
 
 on:
   schedule:
@@ -10,13 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - run: npm i @supabase/supabase-js googleapis
+      - name: Install deps
+        run: npm ci || npm i
 
-      - id: run
+      - name: Run archiver (writes JSON to result.json)
+        id: run
         run: node scripts/archive_multi_to_gdrive.js > result.json
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -25,25 +28,12 @@ jobs:
           GDRIVE_FOLDER_ID_TRANSACTIONS: ${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
           GDRIVE_FOLDER_ID_CHARGEREQUESTS: ${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
 
-      - name: Read result
-        id: parse
-        run: |
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          cat result.json >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Send mail
+      - name: Send Gmail notification (OAuth2, no app password)
         if: always()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.GMAIL_USER }}
-          password: ${{ secrets.GMAIL_PASS }}
-          subject: "Supabase Archive Result (Yangon Time)"
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: "Supabase Archive <${{ secrets.GMAIL_USER }}>"
-          body: |
-            Archive job finished (Yangon time).
-            Result JSON:
-            ${{ steps.parse.outputs.body }}
+        run: node scripts/send_gmail.js result.json
+        env:
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
