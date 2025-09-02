@@ -1,0 +1,49 @@
+name: Monthly Archive to Google Drive
+
+on:
+  schedule:
+    - cron: "35 17 * * *"   # 毎日 17:35 UTC = ヤンゴン(UTC+6:30) 翌日 00:05
+  workflow_dispatch:
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm i @supabase/supabase-js googleapis
+
+      - id: run
+        run: node scripts/archive_multi_to_gdrive.js > result.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GCP_SA_JSON_B64: ${{ secrets.GCP_SA_JSON_B64 }}
+          GDRIVE_FOLDER_ID_TRANSACTIONS: ${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
+          GDRIVE_FOLDER_ID_CHARGEREQUESTS: ${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
+
+      - name: Read result
+        id: parse
+        run: |
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat result.json >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send mail
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.GMAIL_USER }}
+          password: ${{ secrets.GMAIL_PASS }}
+          subject: "Supabase Archive Result (Yangon Time)"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: "Supabase Archive <${{ secrets.GMAIL_USER }}>"
+          body: |
+            Archive job finished (Yangon time).
+            Result JSON:
+            ${{ steps.parse.outputs.body }}
