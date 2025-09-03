@@ -2,7 +2,7 @@ name: Monthly Archive to Google Drive (Yangon)
 
 on:
   schedule:
-    - cron: "35 17 * * *"   # 毎日 17:35 UTC = ヤンゴン(UTC+6:30) 翌日 00:05
+    - cron: "35 17 * * *" # 毎日 17:35 UTC = ヤンゴン 00:05
   workflow_dispatch:
 
 jobs:
@@ -18,9 +18,10 @@ jobs:
       - name: Install deps
         run: npm ci || npm i
 
-      - name: Run archiver (writes JSON to result.json)
+      - name: Run archiver (always writes result.json)
         id: run
-        run: node scripts/archive_multi_to_gdrive.js > result.json
+        continue-on-error: true # 失敗でも後続でメール可
+        run: node scripts/archive_multi_to_gdrive.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -28,8 +29,15 @@ jobs:
           GDRIVE_FOLDER_ID_TRANSACTIONS: ${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
           GDRIVE_FOLDER_ID_CHARGEREQUESTS: ${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
 
-      - name: Send Gmail notification (OAuth2, no app password)
-        if: always()
+      - name: Parse executed flag
+        id: parse
+        run: |
+          # result.json はアーカイブスクリプトが必ず出力
+          EXECUTED=$(node -e "const fs=require('fs');let j={};try{j=JSON.parse(fs.readFileSync('result.json','utf8'))}catch{};process.stdout.write(j.executed?'true':'false');")
+          echo "executed=$EXECUTED" >> $GITHUB_OUTPUT
+
+      - name: Send Gmail notification (only if executed)
+        if: steps.parse.outputs.executed == 'true'
         run: node scripts/send_gmail.js result.json
         env:
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
