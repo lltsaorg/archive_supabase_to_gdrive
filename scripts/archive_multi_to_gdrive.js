@@ -46,14 +46,16 @@ const SA_JSON_B64 = process.env.GCP_SA_JSON_B64;
 const TABLES = [
   {
     table: "Transactions",
-    rpc: "move_old_transactions_batch_json",
+    stageRpc: "stage_old_transactions_batch_json",
+    finalizeRpc: "finalize_delete_transactions_by_run",
     stagingTable: "transactions_archive_staging",
     cutoffColumn: "created_at",
     folderEnv: "GDRIVE_FOLDER_ID_TRANSACTIONS",
   },
   {
     table: "ChargeRequests",
-    rpc: "move_old_chargerequests_batch_json",
+    stageRpc: "stage_old_chargerequests_batch_json",
+    finalizeRpc: "finalize_delete_chargerequests_by_run",
     stagingTable: "charge_requests_archive_staging",
     cutoffColumn: "requested_at",
     folderEnv: "GDRIVE_FOLDER_ID_CHARGEREQUESTS",
@@ -120,11 +122,16 @@ function toCsv(rows) {
 
 function driveClient() {
   const creds = JSON.parse(Buffer.from(SA_JSON_B64, "base64").toString("utf8"));
+  const delegatedUser = process.env.GCP_DELEGATED_USER_EMAIL;
+  // If GCP_DELEGATED_USER_EMAIL is set and the service account has
+  // domain-wide delegation, we impersonate that user so uploads use
+  // the user's Drive quota (My Drive or Shared Drive).
   const jwt = new google.auth.JWT(
     creds.client_email,
     undefined,
     creds.private_key,
-    ["https://www.googleapis.com/auth/drive.file"]
+    ["https://www.googleapis.com/auth/drive.file"],
+    delegatedUser || undefined
   );
   return google.drive({ version: "v3", auth: jwt });
 }
@@ -167,30 +174,37 @@ async function processOneTable(supabase, drive, cfg, cutoffISO) {
   const folderId = process.env[cfg.folderEnv];
   if (!folderId) throw new Error(`${cfg.table}: missing env ${cfg.folderEnv}`);
 
-  let movedTotal = 0;
+  // Phase 1: stage rows only (no deletion yet)
+  let stagedTotal = 0;
   while (true) {
-    const { data, error } = await supabase.rpc(cfg.rpc, {
+    const { data, error } = await supabase.rpc(cfg.stageRpc, {
       cutoff: cutoffISO,
       batch_size: BATCH_SIZE,
       in_run_id: runId,
     });
-    if (error) throw new Error(`${cfg.table} RPC error: ${error.message}`);
-    const moved = data ?? [];
-    movedTotal += moved.length;
-    if (moved.length < BATCH_SIZE) break;
+    if (error) throw new Error(`${cfg.table} stage RPC error: ${error.message}`);
+    const staged = data ?? [];
+    stagedTotal += staged.length;
+    if (staged.length < BATCH_SIZE) break;
   }
-  if (movedTotal === 0)
+  if (stagedTotal === 0)
     return { ok: true, table: cfg.table, moved: 0, skipped: true, cutoff: cutoffISO };
 
   const rows = await fetchStagingRows(supabase, cfg.stagingTable, runId);
   if (!rows || rows.length === 0) {
-    throw new Error(`${cfg.table}: staging has no rows for run_id=${runId} despite moved=${movedTotal}`);
+    throw new Error(`${cfg.table}: staging has no rows for run_id=${runId} despite staged=${stagedTotal}`);
   }
   const csv = toCsv(rows);
   const ym = cutoffISO.slice(0, 7);
   const name = `${cfg.table}_archive_until_${ym}_${Date.now()}_${runId}.csv`;
 
   const file = await uploadCsv(drive, folderId, name, csv);
+
+  // Phase 2: finalize deletion in source based on staged run_id
+  const { data: finData, error: finErr } = await supabase.rpc(cfg.finalizeRpc, {
+    in_run_id: runId,
+  });
+  if (finErr) throw new Error(`${cfg.table} finalize RPC error: ${finErr.message}`);
 
   const { error: delErr } = await supabase
     .from(cfg.stagingTable)
@@ -202,7 +216,7 @@ async function processOneTable(supabase, drive, cfg, cutoffISO) {
   return {
     ok: true,
     table: cfg.table,
-    moved: movedTotal,
+    moved: Array.isArray(finData) ? finData.length : stagedTotal,
     cutoff: cutoffISO,
     fileUrl: file.webViewLink,
     folderUrl: `https://drive.google.com/drive/folders/${folderId}`,
