@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import { google } from "googleapis";
+import { Readable } from "stream";
 import fs from "fs";
 
 // Lightweight .env loader: loads .env.local and .env before reading process.env
@@ -128,7 +129,9 @@ function driveClient() {
   return google.drive({ version: "v3", auth: jwt });
 }
 async function uploadCsv(drive, folderId, name, csv) {
-  const media = { mimeType: "text/csv", body: Buffer.from(csv, "utf8") };
+  // googleapis expects a Readable stream for multipart upload
+  const body = Readable.from(Buffer.from(csv, "utf8"));
+  const media = { mimeType: "text/csv", body };
   const meta = { name, parents: [folderId] };
   const res = await drive.files.create({
     requestBody: meta,
