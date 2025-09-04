@@ -26,6 +26,7 @@
   - ヘッダ = 退避 JSON の全キーのユニオン（ソート）
   - 保存名: `Transactions_archive_until_2025-04_1712345678901_<runid>.csv` の形式
 - Drive 保管先: `GDRIVE_FOLDER_ID_TRANSACTIONS` / `GDRIVE_FOLDER_ID_CHARGEREQUESTS`
+  - 共有ドライブの場合は、フォルダをサービスアカウントに共有し、API 側で `supportsAllDrives` を有効化済み
 - staging 後処理: アップロード成功後、該当 `run_id` の行を削除
 - 出力: `result.json`
   - スキップ時: `{ "executed": false, "reason": "not-first-day-yangon" }`
@@ -36,21 +37,25 @@
 ## 事前準備
 
 ### Supabase
-- 以下のオブジェクトを作成（SQL 一括適用など）
-  - 関数:
-    - `public.move_old_transactions_batch_json(cutoff,batch_size,in_run_id)`
-    - `public.move_old_chargerequests_batch_json(cutoff,batch_size,in_run_id)`
-  - staging テーブル:
-    - `public.transactions_archive_staging`
-    - `public.charge_requests_archive_staging`
-  - 権限: service_role のみ実行可
+- 以下の SQL を Supabase（SQL Editor）で実行してください（更新あり）。
+  - `sql/archive_objects.sql`
+    - staging テーブルの作成
+    - 二段階 RPC の定義（stage → finalize）
+      - stage: 元テーブルは削除せず、staging にコピーのみ
+      - finalize: アップロード成功後、staging の run_id をもとに元テーブルを削除
+    - 既存の一括移動関数（move_old_*）は残していますが、コードは新しい二段階 RPC を使用します
+    - `service_role` へ実行権限を付与
 
-### Google Drive
-- フォルダ:
-  - `TransactionsArchive` の ID を `GDRIVE_FOLDER_ID_TRANSACTIONS` に設定
-  - `ChargeRequestsArchive` の ID を `GDRIVE_FOLDER_ID_CHARGEREQUESTS` に設定
-- サービスアカウント（Drive API 有効）を編集者で共有
-- サービスアカウント JSON を base64 化して `GCP_SA_JSON_B64` に設定
+### Google Drive（OAuth 推奨）
+- 個人 My Drive へ出力する場合は OAuth クライアント（無料）を使用します。
+  - GCP で OAuth クライアント（Desktop app）を作成し、Consent の Publishing status を「In production」に。
+  - Drive API を有効化。
+  - `get_drive_refresh_token.mjs` で refresh_token を取得し `.env.local` に保存。
+  - 出力先フォルダ ID を `GDRIVE_FOLDER_ID_TRANSACTIONS` / `GDRIVE_FOLDER_ID_CHARGEREQUESTS` に設定。
+- 共有ドライブ + サービスアカウントは代替手段（Workspace 環境向け）。
+  - 共有ドライブのメンバーに SA を追加し、`GCP_SA_JSON_B64` などで認証設定。
+  - もしくはドメインワイド委任 + `GCP_DELEGATED_USER_EMAIL` でユーザー代理。
+  - コードは OAuth を優先し、設定が無い場合は SA にフォールバックします。
 
 ### Gmail API / OAuth2
 - Gmail API 有効化
@@ -61,7 +66,9 @@
 ## GitHub Secrets（必須）
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `GCP_SA_JSON_B64`
+- `GCP_OAUTH_CLIENT_ID`
+- `GCP_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REFRESH_TOKEN`
 - `GDRIVE_FOLDER_ID_TRANSACTIONS`
 - `GDRIVE_FOLDER_ID_CHARGEREQUESTS`
 - `GMAIL_CLIENT_ID`
@@ -72,6 +79,9 @@
 
 ## GitHub Variables（非Secret）
 - `CUTOFF_MONTHS_DEFAULT`（省略時は 6）
+- `ARCHIVE_TEST_DAYS`（任意）: テスト時に「N日前まで」を使用
+- `ARCHIVE_FORCE_RUN`（任意）: テスト時に月初チェックを無効化（1/true）
+- `GCP_DELEGATED_USER_EMAIL`（任意）: DWD を使ってユーザーとしてアップロードする場合に指定
 
 リポジトリの Variables に追加すると、ワークフローに自動で渡されます（Secrets ではありません）。
 
@@ -94,4 +104,16 @@
 - `scripts/archive_multi_to_gdrive.js`
 - `scripts/send_gmail.js`
 - `package.json`
+- `sql/archive_objects.sql`
 
+
+## テスト実行（期間を「3日前」に一時変更）
+- 簡易に元へ戻せるよう、環境変数でテスト用の切替を追加しています。
+- 手動実行（ローカル or Actions）時に以下を設定してください。
+  - `ARCHIVE_TEST_DAYS=3`: 月数ではなく「3日前まで」をカットオフに使用
+  - `ARCHIVE_FORCE_RUN=1`: 月初チェックを無効化し、いつでも実行
+- 例（ローカル）:
+  - `ARCHIVE_TEST_DAYS=3 ARCHIVE_FORCE_RUN=1 npm run archive`
+- 例（GitHub Actions の手動実行）:
+  - `workflow_dispatch` 入力や Environment 変数で上記2つを指定
+- テスト後は変数を未設定に戻すだけで、通常運用（既定: 6ヶ月前, 月初のみ）に戻ります。

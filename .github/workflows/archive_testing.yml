@@ -1,16 +1,25 @@
-name: Archive to Drive
+name: Archive to Drive (testing)
 
 on:
-  # Manual run allowed, but job guarded to main branch
+  # Manual runs with test inputs
   workflow_dispatch:
-  # Schedule fires from default branch; job also guards to main
-  schedule:
-    - cron: "15 17 * * *"
+    inputs:
+      archive_test_days:
+        description: "Test: use N days instead of months (empty to disable)"
+        required: false
+        default: ""
+      archive_force_run:
+        description: "Test: set 1/true to bypass first-day (empty/0=false)"
+        required: false
+        default: "0"
+  # Optional: run on pushes to testing branch
+  push:
+    branches: [ "testing" ]
 
 jobs:
   archive:
-    # Ensure workflow runs only on main, regardless of trigger
-    if: github.ref_name == 'main'
+    # Ensure this workflow only runs on testing branch
+    if: github.ref_name == 'testing'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +33,7 @@ jobs:
 
       - name: Run archiver (always writes result.json)
         id: run
-        continue-on-error: true # 失敗でも後続でメール可
+        continue-on-error: true
         run: node scripts/archive_multi_to_gdrive.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -37,11 +46,13 @@ jobs:
           # Archive period (months). Not a secret.
           # Defaults to 6 if unset.
           CUTOFF_MONTHS_DEFAULT: ${{ vars.CUTOFF_MONTHS_DEFAULT }}
+          # Test mode: allow inputs, fallback to repository vars
+          ARCHIVE_TEST_DAYS: ${{ github.event.inputs.archive_test_days || vars.ARCHIVE_TEST_DAYS }}
+          ARCHIVE_FORCE_RUN: ${{ github.event.inputs.archive_force_run || vars.ARCHIVE_FORCE_RUN }}
 
       - name: Parse executed flag
         id: parse
         run: |
-          # result.json はアーカイブスクリプトが必ず出力
           EXECUTED=$(node -e "const fs=require('fs');let j={};try{j=JSON.parse(fs.readFileSync('result.json','utf8'))}catch{};process.stdout.write(j.executed?'true':'false');")
           echo "executed=$EXECUTED" >> $GITHUB_OUTPUT
 
@@ -54,3 +65,4 @@ jobs:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+

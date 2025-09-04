@@ -4,7 +4,8 @@
   "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
-    "googleapis": "^129.0.0"
+    "googleapis": "^129.0.0",
+    "dotenv": "^16.4.5"
   },
   "scripts": {
     "archive": "node scripts/archive_multi_to_gdrive.js",
