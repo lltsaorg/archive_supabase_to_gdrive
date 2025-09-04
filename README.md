@@ -37,18 +37,25 @@
 ## 事前準備
 
 ### Supabase
-- 以下の SQL を Supabase（SQL Editor）で実行してください。
+- 以下の SQL を Supabase（SQL Editor）で実行してください（更新あり）。
   - `sql/archive_objects.sql`
     - staging テーブルの作成
-    - RPC 関数の定義（CamelCase テーブルを明示的に引用して安全化、並行実行でもロック競合しにくい実装に修正）
+    - 二段階 RPC の定義（stage → finalize）
+      - stage: 元テーブルは削除せず、staging にコピーのみ
+      - finalize: アップロード成功後、staging の run_id をもとに元テーブルを削除
+    - 既存の一括移動関数（move_old_*）は残していますが、コードは新しい二段階 RPC を使用します
     - `service_role` へ実行権限を付与
 
-### Google Drive
-- フォルダ:
-  - `TransactionsArchive` の ID を `GDRIVE_FOLDER_ID_TRANSACTIONS` に設定
-  - `ChargeRequestsArchive` の ID を `GDRIVE_FOLDER_ID_CHARGEREQUESTS` に設定
-- サービスアカウント（Drive API 有効）を編集者で共有
-- サービスアカウント JSON を base64 化して `GCP_SA_JSON_B64` に設定
+### Google Drive（OAuth 推奨）
+- 個人 My Drive へ出力する場合は OAuth クライアント（無料）を使用します。
+  - GCP で OAuth クライアント（Desktop app）を作成し、Consent の Publishing status を「In production」に。
+  - Drive API を有効化。
+  - `get_drive_refresh_token.mjs` で refresh_token を取得し `.env.local` に保存。
+  - 出力先フォルダ ID を `GDRIVE_FOLDER_ID_TRANSACTIONS` / `GDRIVE_FOLDER_ID_CHARGEREQUESTS` に設定。
+- 共有ドライブ + サービスアカウントは代替手段（Workspace 環境向け）。
+  - 共有ドライブのメンバーに SA を追加し、`GCP_SA_JSON_B64` などで認証設定。
+  - もしくはドメインワイド委任 + `GCP_DELEGATED_USER_EMAIL` でユーザー代理。
+  - コードは OAuth を優先し、設定が無い場合は SA にフォールバックします。
 
 ### Gmail API / OAuth2
 - Gmail API 有効化
@@ -59,7 +66,9 @@
 ## GitHub Secrets（必須）
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `GCP_SA_JSON_B64`
+- `GCP_OAUTH_CLIENT_ID`
+- `GCP_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REFRESH_TOKEN`
 - `GDRIVE_FOLDER_ID_TRANSACTIONS`
 - `GDRIVE_FOLDER_ID_CHARGEREQUESTS`
 - `GMAIL_CLIENT_ID`
@@ -72,6 +81,7 @@
 - `CUTOFF_MONTHS_DEFAULT`（省略時は 6）
 - `ARCHIVE_TEST_DAYS`（任意）: テスト時に「N日前まで」を使用
 - `ARCHIVE_FORCE_RUN`（任意）: テスト時に月初チェックを無効化（1/true）
+- `GCP_DELEGATED_USER_EMAIL`（任意）: DWD を使ってユーザーとしてアップロードする場合に指定
 
 リポジトリの Variables に追加すると、ワークフローに自動で渡されます（Secrets ではありません）。
 
