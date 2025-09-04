@@ -1,8 +1,6 @@
-name: Monthly Archive to Google Drive (Yangon)
+name: Archive to Drive
 
 on:
-  schedule:
-    - cron: "35 17 * * *" # 毎日 17:35 UTC = ヤンゴン 00:05
   workflow_dispatch:
     inputs:
       archive_test_days:
@@ -13,6 +11,8 @@ on:
         description: "Test: set 1/true to bypass first-day (empty/0=false)"
         required: false
         default: "0"
+  schedule:
+    - cron: "15 17 * * *"
 
 jobs:
   archive:
@@ -22,10 +22,23 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install deps
         run: npm ci || npm i
+
+      - name: Create .env.local for Drive OAuth
+        run: |
+          cat > .env.local <<EOF
+          GCP_OAUTH_CLIENT_ID=${{ secrets.GCP_OAUTH_CLIENT_ID }}
+          GCP_OAUTH_CLIENT_SECRET=${{ secrets.GCP_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN=${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID_TRANSACTIONS=${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
+          GDRIVE_FOLDER_ID_CHARGEREQUESTS=${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
+          EOF
+
+      - name: Dry run check
+        run: node check_gdrive_setup.mjs
 
       - name: Run archiver (always writes result.json)
         id: run
@@ -34,9 +47,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          GCP_SA_JSON_B64: ${{ secrets.GCP_SA_JSON_B64 }}
-          GDRIVE_FOLDER_ID_TRANSACTIONS: ${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
-          GDRIVE_FOLDER_ID_CHARGEREQUESTS: ${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
           # Archive period (months). Not a secret.
           # Defaults to 6 if unset.
           CUTOFF_MONTHS_DEFAULT: ${{ vars.CUTOFF_MONTHS_DEFAULT }}
@@ -60,10 +70,3 @@ jobs:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
-
-      - name: Upload result.json (artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: archive-result
-          path: result.json
-          retention-days: 7

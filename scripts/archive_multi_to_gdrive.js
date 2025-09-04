@@ -1,11 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import { google } from "googleapis";
+import dotenv from "dotenv";
 import { Readable } from "stream";
 import fs from "fs";
 
 // Lightweight .env loader: loads .env.local and .env before reading process.env
 (function loadDotEnv() {
+  try { dotenv.config({ path: ".env.local" }); } catch {}
   function applyEnv(content) {
     if (!content) return;
     const lines = content.split(/\r?\n/);
@@ -120,20 +122,41 @@ function toCsv(rows) {
   return csv;
 }
 
-function driveClient() {
-  const creds = JSON.parse(Buffer.from(SA_JSON_B64, "base64").toString("utf8"));
-  const delegatedUser = process.env.GCP_DELEGATED_USER_EMAIL;
-  // If GCP_DELEGATED_USER_EMAIL is set and the service account has
-  // domain-wide delegation, we impersonate that user so uploads use
-  // the user's Drive quota (My Drive or Shared Drive).
-  const jwt = new google.auth.JWT(
-    creds.client_email,
-    undefined,
-    creds.private_key,
-    ["https://www.googleapis.com/auth/drive.file"],
-    delegatedUser || undefined
-  );
-  return google.drive({ version: "v3", auth: jwt });
+function buildDriveClient() {
+  const scopes = ["https://www.googleapis.com/auth/drive.file"];
+  // Preferred: OAuth client with refresh token (works with My Drive)
+  if (process.env.GCP_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_REFRESH_TOKEN) {
+    const oauth2 = new google.auth.OAuth2(
+      process.env.GCP_OAUTH_CLIENT_ID,
+      process.env.GCP_OAUTH_CLIENT_SECRET
+    );
+    oauth2.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+    return google.drive({ version: "v3", auth: oauth2 });
+  }
+  // Fallback: Service Account (Shared Drive or DWD impersonation required)
+  if (SA_JSON_B64) {
+    const creds = JSON.parse(Buffer.from(SA_JSON_B64, "base64").toString("utf8"));
+    const delegatedUser = process.env.GCP_DELEGATED_USER_EMAIL;
+    const jwt = new google.auth.JWT(
+      creds.client_email,
+      undefined,
+      creds.private_key,
+      scopes,
+      delegatedUser || undefined
+    );
+    return google.drive({ version: "v3", auth: jwt });
+  }
+  if (process.env.GCP_SERVICE_ACCOUNT_EMAIL && process.env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    const key = String(process.env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY).replace(/\\n/g, "\n");
+    const jwt = new google.auth.JWT({
+      email: process.env.GCP_SERVICE_ACCOUNT_EMAIL,
+      key,
+      scopes,
+      subject: process.env.GCP_DELEGATED_USER_EMAIL || undefined,
+    });
+    return google.drive({ version: "v3", auth: jwt });
+  }
+  throw new Error("Drive authentication not configured (OAuth or Service Account)");
 }
 async function uploadCsv(drive, folderId, name, csv) {
   // googleapis expects a Readable stream for multipart upload
@@ -252,7 +275,7 @@ if (!isFirstDayInYGN() && String(process.env.ARCHIVE_FORCE_RUN) !== "1" && Strin
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false },
   });
-  const drive = driveClient();
+  const drive = buildDriveClient();
 
   const results = [];
   for (const cfg of TABLES) {
