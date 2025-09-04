@@ -28,6 +28,9 @@ jobs:
           GCP_SA_JSON_B64: ${{ secrets.GCP_SA_JSON_B64 }}
           GDRIVE_FOLDER_ID_TRANSACTIONS: ${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
           GDRIVE_FOLDER_ID_CHARGEREQUESTS: ${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
+          # Archive period (months). Not a secret.
+          # Defaults to 6 if unset.
+          CUTOFF_MONTHS_DEFAULT: ${{ vars.CUTOFF_MONTHS_DEFAULT }}
 
       - name: Parse executed flag
         id: parse

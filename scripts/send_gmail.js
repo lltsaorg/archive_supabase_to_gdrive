@@ -8,15 +8,19 @@ import { google } from "googleapis";
 function buildBodyText(parsed) {
   const lines = [];
   lines.push(`Supabase Archive Result (Yangon)`);
-  lines.push(`Cutoff(UTC): ${parsed.cutoff}`);
+  const months = Number.isFinite(Number(parsed.cutoffMonths)) ? Number(parsed.cutoffMonths) : 6;
+  lines.push(`対象期間: ${months}ヶ月前まで（Yangon月初基準）`);
+  if (parsed.cutoff) lines.push(`Cutoff(UTC): ${parsed.cutoff}（${months}ヶ月前）`);
   lines.push("");
 
   for (const r of parsed.results || []) {
     if (r.ok) {
       if (r.skipped) {
+        if (r.cutoff)   lines.push(`  Cutoff(UTC): ${r.cutoff}（${months}ヶ月前）`);
         lines.push(`[${r.table}] moved=0 (対象なし)`);
       } else {
         lines.push(`[${r.table}] moved=${r.moved}`);
+        if (r.cutoff)   lines.push(`  Cutoff(UTC): ${r.cutoff}（${months}ヶ月前）`);
         if (r.fileUrl)   lines.push(`  File:   ${r.fileUrl}`);
         if (r.folderUrl) lines.push(`  Folder: ${r.folderUrl}`);
       }

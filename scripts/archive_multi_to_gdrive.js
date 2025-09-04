@@ -27,7 +27,7 @@ const TABLES = [
 const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 10000);
 
 // 当月1日 ヤンゴン(UTC+6:30) 00:00 → UTC前日17:30
-function cutoffDateMinus6Months() {
+function cutoffDateMinusMonths(months) {
   const now = new Date();
   const ygn = new Date(
     now.toLocaleString("en-US", { timeZone: "Asia/Yangon" })
@@ -35,7 +35,9 @@ function cutoffDateMinus6Months() {
   const monthStartUTC = new Date(
     Date.UTC(ygn.getUTCFullYear(), ygn.getUTCMonth(), 1, 17, 30, 0)
   );
-  monthStartUTC.setUTCMonth(monthStartUTC.getUTCMonth() - 6);
+  const n = Number(months);
+  const m = Number.isFinite(n) && n >= 1 ? Math.floor(n) : 6;
+  monthStartUTC.setUTCMonth(monthStartUTC.getUTCMonth() - m);
   return monthStartUTC;
 }
 
@@ -125,7 +127,7 @@ async function processOneTable(supabase, drive, cfg, cutoffISO) {
     if (moved.length < BATCH_SIZE) break;
   }
   if (movedTotal === 0)
-    return { ok: true, table: cfg.table, moved: 0, skipped: true };
+    return { ok: true, table: cfg.table, moved: 0, skipped: true, cutoff: cutoffISO };
 
   const rows = await fetchStagingRows(supabase, cfg.stagingTable, runId);
   const csv = toCsv(rows);
@@ -145,6 +147,7 @@ async function processOneTable(supabase, drive, cfg, cutoffISO) {
     ok: true,
     table: cfg.table,
     moved: movedTotal,
+    cutoff: cutoffISO,
     fileUrl: file.webViewLink,
     folderUrl: `https://drive.google.com/drive/folders/${folderId}`,
   };
@@ -159,8 +162,18 @@ async function main() {
     return; // 成功終了（メール不要）
   }
 
-  const cutoff = cutoffDateMinus6Months();
-  const cutoffISO = cutoff.toISOString();
+  // 期間（月数）は環境変数で制御（Secrets でなくてOK）
+  // 優先順: テーブル個別指定 > デフォルト指定 > 6
+  const DEFAULT_MONTHS = Number(process.env.CUTOFF_MONTHS_DEFAULT ?? 6);
+  const cutoffISOGlobal = cutoffDateMinusMonths(DEFAULT_MONTHS).toISOString();
+  const PER_TABLE_MONTHS = {
+    Transactions: Number(
+      process.env.CUTOFF_MONTHS_TRANSACTIONS ?? DEFAULT_MONTHS
+    ),
+    ChargeRequests: Number(
+      process.env.CUTOFF_MONTHS_CHARGEREQUESTS ?? DEFAULT_MONTHS
+    ),
+  };
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false },
@@ -170,14 +183,14 @@ async function main() {
   const results = [];
   for (const cfg of TABLES) {
     try {
-      const r = await processOneTable(supabase, drive, cfg, cutoffISO);
+      const r = await processOneTable(supabase, drive, cfg, cutoffISOGlobal);
       results.push(r);
     } catch (e) {
       results.push({ ok: false, table: cfg.table, error: String(e) });
     }
   }
 
-  const payload = { executed: true, cutoff: cutoffISO, results };
+  const payload = { executed: true, cutoff: cutoffISOGlobal, cutoffMonths: DEFAULT_MONTHS, results };
   fs.writeFileSync("result.json", JSON.stringify(payload));
   console.log(JSON.stringify(payload));
 
