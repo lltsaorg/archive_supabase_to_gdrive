@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "35 17 * * *" # 毎日 17:35 UTC = ヤンゴン 00:05
   workflow_dispatch:
+    inputs:
+      archive_test_days:
+        description: "Test: use N days instead of months (empty to disable)"
+        required: false
+        default: ""
+      archive_force_run:
+        description: "Test: set 1/true to bypass first-day (empty/0=false)"
+        required: false
+        default: "0"
 
 jobs:
   archive:
@@ -31,6 +40,9 @@ jobs:
           # Archive period (months). Not a secret.
           # Defaults to 6 if unset.
           CUTOFF_MONTHS_DEFAULT: ${{ vars.CUTOFF_MONTHS_DEFAULT }}
+          # Test mode (optional): prefer inputs; fallback to repository vars
+          ARCHIVE_TEST_DAYS: ${{ github.event.inputs.archive_test_days || vars.ARCHIVE_TEST_DAYS }}
+          ARCHIVE_FORCE_RUN: ${{ github.event.inputs.archive_force_run || vars.ARCHIVE_FORCE_RUN }}
 
       - name: Parse executed flag
         id: parse

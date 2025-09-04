@@ -3,6 +3,41 @@ import { randomUUID } from "crypto";
 import { google } from "googleapis";
 import fs from "fs";
 
+// Lightweight .env loader: loads .env.local and .env before reading process.env
+(function loadDotEnv() {
+  function applyEnv(content) {
+    if (!content) return;
+    const lines = content.split(/\r?\n/);
+    for (let rawLine of lines) {
+      if (!rawLine) continue;
+      // Allow comma-separated assignments in a single line
+      const parts = rawLine.split(",");
+      for (let part of parts) {
+        const line = part.trim();
+        if (!line || line.startsWith("#")) continue;
+        const eq = line.indexOf("=");
+        if (eq <= 0) continue;
+        const key = line.slice(0, eq).trim();
+        let val = line.slice(eq + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!(key in process.env)) process.env[key] = val;
+      }
+    }
+  }
+  try {
+    if (fs.existsSync(".env.local")) {
+      applyEnv(fs.readFileSync(".env.local", "utf8"));
+    }
+  } catch {}
+  try {
+    if (fs.existsSync(".env")) {
+      applyEnv(fs.readFileSync(".env", "utf8"));
+    }
+  } catch {}
+})();
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SA_JSON_B64 = process.env.GCP_SA_JSON_B64;
