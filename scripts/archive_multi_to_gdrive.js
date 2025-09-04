@@ -40,6 +40,20 @@ function cutoffDateMinusMonths(months) {
   monthStartUTC.setUTCMonth(monthStartUTC.getUTCMonth() - m);
   return monthStartUTC;
 }
+// Test support: compute cutoff by days from Yangon midnight
+function cutoffDateMinusDays(days) {
+  const now = new Date();
+  const ygn = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Yangon" })
+  );
+  const ygnMidnightUTC = new Date(
+    Date.UTC(ygn.getUTCFullYear(), ygn.getUTCMonth(), ygn.getUTCDate(), 17, 30, 0)
+  );
+  const d = Number(days);
+  const n = Number.isFinite(d) && d >= 1 ? Math.floor(d) : 3;
+  ygnMidnightUTC.setUTCDate(ygnMidnightUTC.getUTCDate() - n);
+  return ygnMidnightUTC;
+}
 
 function isFirstDayInYGN(nowUtc = new Date()) {
   const ygn = new Date(
@@ -155,7 +169,7 @@ async function processOneTable(supabase, drive, cfg, cutoffISO) {
 
 async function main() {
   // 月初めでないなら「実行していない」ことを明示して終了
-  if (!isFirstDayInYGN()) {
+if (!isFirstDayInYGN() && String(process.env.ARCHIVE_FORCE_RUN) !== "1" && String(process.env.ARCHIVE_FORCE_RUN).toLowerCase() !== "true") {
     const skipped = { executed: false, reason: "not-first-day-yangon" };
     fs.writeFileSync("result.json", JSON.stringify(skipped));
     console.log(JSON.stringify(skipped));
@@ -164,8 +178,12 @@ async function main() {
 
   // 期間（月数）は環境変数で制御（Secrets でなくてOK）
   // 優先順: テーブル個別指定 > デフォルト指定 > 6
+  const TEST_DAYS = process.env.ARCHIVE_TEST_DAYS;
   const DEFAULT_MONTHS = Number(process.env.CUTOFF_MONTHS_DEFAULT ?? 6);
-  const cutoffISOGlobal = cutoffDateMinusMonths(DEFAULT_MONTHS).toISOString();
+  const cutoffISOGlobal = (TEST_DAYS
+    ? cutoffDateMinusDays(TEST_DAYS)
+    : cutoffDateMinusMonths(DEFAULT_MONTHS)
+  ).toISOString();
   const PER_TABLE_MONTHS = {
     Transactions: Number(
       process.env.CUTOFF_MONTHS_TRANSACTIONS ?? DEFAULT_MONTHS
@@ -190,7 +208,14 @@ async function main() {
     }
   }
 
-  const payload = { executed: true, cutoff: cutoffISOGlobal, cutoffMonths: DEFAULT_MONTHS, results };
+  const payload = {
+    executed: true,
+    cutoff: cutoffISOGlobal,
+    cutoffMonths: TEST_DAYS ? undefined : DEFAULT_MONTHS,
+    cutoffDays: TEST_DAYS ? Number(TEST_DAYS) : undefined,
+    forcedRun: !isFirstDayInYGN(),
+    results,
+  };
   fs.writeFileSync("result.json", JSON.stringify(payload));
   console.log(JSON.stringify(payload));
 

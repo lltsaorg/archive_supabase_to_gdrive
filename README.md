@@ -95,3 +95,14 @@
 - `scripts/send_gmail.js`
 - `package.json`
 
+
+## テスト実行（期間を「3日前」に一時変更）
+- 簡易に元へ戻せるよう、環境変数でテスト用の切替を追加しています。
+- 手動実行（ローカル or Actions）時に以下を設定してください。
+  - `ARCHIVE_TEST_DAYS=3`: 月数ではなく「3日前まで」をカットオフに使用
+  - `ARCHIVE_FORCE_RUN=1`: 月初チェックを無効化し、いつでも実行
+- 例（ローカル）:
+  - `ARCHIVE_TEST_DAYS=3 ARCHIVE_FORCE_RUN=1 npm run archive`
+- 例（GitHub Actions の手動実行）:
+  - `workflow_dispatch` 入力や Environment 変数で上記2つを指定
+- テスト後は変数を未設定に戻すだけで、通常運用（既定: 6ヶ月前, 月初のみ）に戻ります。
