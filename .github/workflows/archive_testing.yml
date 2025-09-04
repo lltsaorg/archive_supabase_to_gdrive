@@ -1,7 +1,7 @@
 name: Archive to Drive (testing)
 
 on:
-  # Manual runs with test inputs
+  # Manual runs with test inputs (choose main or testing branch at dispatch)
   workflow_dispatch:
     inputs:
       archive_test_days:
@@ -12,14 +12,11 @@ on:
         description: "Test: set 1/true to bypass first-day (empty/0=false)"
         required: false
         default: "0"
-  # Optional: run on pushes to testing branch
-  push:
-    branches: [ "testing" ]
 
 jobs:
   archive:
-    # Ensure this workflow only runs on testing branch
-    if: github.ref_name == 'testing'
+    # Allow manual tests only on main or testing
+    if: github.ref_name == 'testing' || github.ref_name == 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,4 +62,3 @@ jobs:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
-
