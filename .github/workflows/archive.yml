@@ -27,18 +27,6 @@ jobs:
       - name: Install deps
         run: npm ci || npm i
 
-      - name: Create .env.local for Drive OAuth
-        run: |
-          cat > .env.local <<EOF
-          GCP_OAUTH_CLIENT_ID=${{ secrets.GCP_OAUTH_CLIENT_ID }}
-          GCP_OAUTH_CLIENT_SECRET=${{ secrets.GCP_OAUTH_CLIENT_SECRET }}
-          GOOGLE_OAUTH_REFRESH_TOKEN=${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
-          GDRIVE_FOLDER_ID_TRANSACTIONS=${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
-          GDRIVE_FOLDER_ID_CHARGEREQUESTS=${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
-          EOF
-
-      # Removed dry-run Drive check to avoid insufficient scope errors
-
       - name: Run archiver (always writes result.json)
         id: run
         continue-on-error: true # 失敗でも後続でメール可
@@ -46,6 +34,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GCP_OAUTH_CLIENT_ID: ${{ secrets.GCP_OAUTH_CLIENT_ID }}
+          GCP_OAUTH_CLIENT_SECRET: ${{ secrets.GCP_OAUTH_CLIENT_SECRET }}
+          GOOGLE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_FOLDER_ID_TRANSACTIONS: ${{ secrets.GDRIVE_FOLDER_ID_TRANSACTIONS }}
+          GDRIVE_FOLDER_ID_CHARGEREQUESTS: ${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
           # Archive period (months). Not a secret.
           # Defaults to 6 if unset.
           CUTOFF_MONTHS_DEFAULT: ${{ vars.CUTOFF_MONTHS_DEFAULT }}

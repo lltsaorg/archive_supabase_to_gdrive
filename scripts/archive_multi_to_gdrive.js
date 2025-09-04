@@ -43,7 +43,7 @@ import fs from "fs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SA_JSON_B64 = process.env.GCP_SA_JSON_B64;
+// OAuth 専用運用。サービスアカウントは使用しない。
 
 const TABLES = [
   {
@@ -123,40 +123,16 @@ function toCsv(rows) {
 }
 
 function buildDriveClient() {
-  const scopes = ["https://www.googleapis.com/auth/drive.file"];
-  // Preferred: OAuth client with refresh token (works with My Drive)
-  if (process.env.GCP_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_REFRESH_TOKEN) {
-    const oauth2 = new google.auth.OAuth2(
-      process.env.GCP_OAUTH_CLIENT_ID,
-      process.env.GCP_OAUTH_CLIENT_SECRET
-    );
-    oauth2.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
-    return google.drive({ version: "v3", auth: oauth2 });
+  // OAuth2 で実行（My Drive に対応）。必要なスコープは drive.file。
+  const clientId = process.env.GCP_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GCP_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error("Drive OAuth is not configured: set GCP_OAUTH_CLIENT_ID/SECRET and GOOGLE_OAUTH_REFRESH_TOKEN");
   }
-  // Fallback: Service Account (Shared Drive or DWD impersonation required)
-  if (SA_JSON_B64) {
-    const creds = JSON.parse(Buffer.from(SA_JSON_B64, "base64").toString("utf8"));
-    const delegatedUser = process.env.GCP_DELEGATED_USER_EMAIL;
-    const jwt = new google.auth.JWT(
-      creds.client_email,
-      undefined,
-      creds.private_key,
-      scopes,
-      delegatedUser || undefined
-    );
-    return google.drive({ version: "v3", auth: jwt });
-  }
-  if (process.env.GCP_SERVICE_ACCOUNT_EMAIL && process.env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY) {
-    const key = String(process.env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY).replace(/\\n/g, "\n");
-    const jwt = new google.auth.JWT({
-      email: process.env.GCP_SERVICE_ACCOUNT_EMAIL,
-      key,
-      scopes,
-      subject: process.env.GCP_DELEGATED_USER_EMAIL || undefined,
-    });
-    return google.drive({ version: "v3", auth: jwt });
-  }
-  throw new Error("Drive authentication not configured (OAuth or Service Account)");
+  const oauth2 = new google.auth.OAuth2(clientId, clientSecret);
+  oauth2.setCredentials({ refresh_token: refreshToken });
+  return google.drive({ version: "v3", auth: oauth2 });
 }
 async function uploadCsv(drive, folderId, name, csv) {
   // googleapis expects a Readable stream for multipart upload
