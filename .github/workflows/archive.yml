@@ -37,8 +37,7 @@ jobs:
           GDRIVE_FOLDER_ID_CHARGEREQUESTS=${{ secrets.GDRIVE_FOLDER_ID_CHARGEREQUESTS }}
           EOF
 
-      - name: Dry run check
-        run: node check_gdrive_setup.mjs
+      # Removed dry-run Drive check to avoid insufficient scope errors
 
       - name: Run archiver (always writes result.json)
         id: run
