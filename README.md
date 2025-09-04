@@ -26,6 +26,7 @@
   - ヘッダ = 退避 JSON の全キーのユニオン（ソート）
   - 保存名: `Transactions_archive_until_2025-04_1712345678901_<runid>.csv` の形式
 - Drive 保管先: `GDRIVE_FOLDER_ID_TRANSACTIONS` / `GDRIVE_FOLDER_ID_CHARGEREQUESTS`
+  - 共有ドライブの場合は、フォルダをサービスアカウントに共有し、API 側で `supportsAllDrives` を有効化済み
 - staging 後処理: アップロード成功後、該当 `run_id` の行を削除
 - 出力: `result.json`
   - スキップ時: `{ "executed": false, "reason": "not-first-day-yangon" }`
@@ -36,14 +37,11 @@
 ## 事前準備
 
 ### Supabase
-- 以下のオブジェクトを作成（SQL 一括適用など）
-  - 関数:
-    - `public.move_old_transactions_batch_json(cutoff,batch_size,in_run_id)`
-    - `public.move_old_chargerequests_batch_json(cutoff,batch_size,in_run_id)`
-  - staging テーブル:
-    - `public.transactions_archive_staging`
-    - `public.charge_requests_archive_staging`
-  - 権限: service_role のみ実行可
+- 以下の SQL を Supabase（SQL Editor）で実行してください。
+  - `sql/archive_objects.sql`
+    - staging テーブルの作成
+    - RPC 関数の定義（CamelCase テーブルを明示的に引用して安全化、並行実行でもロック競合しにくい実装に修正）
+    - `service_role` へ実行権限を付与
 
 ### Google Drive
 - フォルダ:
@@ -72,6 +70,8 @@
 
 ## GitHub Variables（非Secret）
 - `CUTOFF_MONTHS_DEFAULT`（省略時は 6）
+- `ARCHIVE_TEST_DAYS`（任意）: テスト時に「N日前まで」を使用
+- `ARCHIVE_FORCE_RUN`（任意）: テスト時に月初チェックを無効化（1/true）
 
 リポジトリの Variables に追加すると、ワークフローに自動で渡されます（Secrets ではありません）。
 
@@ -94,6 +94,7 @@
 - `scripts/archive_multi_to_gdrive.js`
 - `scripts/send_gmail.js`
 - `package.json`
+- `sql/archive_objects.sql`
 
 
 ## テスト実行（期間を「3日前」に一時変更）

@@ -60,3 +60,10 @@ jobs:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+
+      - name: Upload result.json (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-result
+          path: result.json
+          retention-days: 7

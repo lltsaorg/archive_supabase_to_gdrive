@@ -137,6 +137,7 @@ async function uploadCsv(drive, folderId, name, csv) {
     requestBody: meta,
     media,
     fields: "id,name,webViewLink,webContentLink",
+    supportsAllDrives: true,
   });
   return res.data;
 }
@@ -182,6 +183,9 @@ async function processOneTable(supabase, drive, cfg, cutoffISO) {
     return { ok: true, table: cfg.table, moved: 0, skipped: true, cutoff: cutoffISO };
 
   const rows = await fetchStagingRows(supabase, cfg.stagingTable, runId);
+  if (!rows || rows.length === 0) {
+    throw new Error(`${cfg.table}: staging has no rows for run_id=${runId} despite moved=${movedTotal}`);
+  }
   const csv = toCsv(rows);
   const ym = cutoffISO.slice(0, 7);
   const name = `${cfg.table}_archive_until_${ym}_${Date.now()}_${runId}.csv`;
